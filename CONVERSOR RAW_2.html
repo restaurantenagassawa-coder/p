@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛒</text></svg>">
+  <title>Lista de Compras</title>
+  <!-- <script src="https://cdn.tailwindcss.com"></script> -->
+  <script src="tailwind.js"></script>
+  <style>
+    .blockName {
+      color: black;
+      font-weight: bold;
+      font-family: arial;
+    }
+    @media print {
+      body { margin: 0; font-family: sans-serif; }
+      @page { size: auto; margin: 30px; }
+      .line { margin: 5px 0; }
+      .quebraPagina { page-break-after: always; }
+    }
+  </style>
+</head>
+<body class="bg-black min-h-screen flex items-center justify-center">
+
+  <div class="w-[50%] m-auto mt-2 flex flex-col">
+
+    <!-- Header -->
+    <div class="bg-orange-400 p-6 rounded-t-lg shadow flex justify-between items-center">
+      <div class="flex gap-5">
+        <button id="limpar" class="bg-white text-orange-400 px-4 py-2 rounded-lg font-bold">LIMPAR</button>
+        <button id="copiar" class="bg-white text-orange-400 px-4 py-2 rounded-lg font-bold">COPIAR</button>
+      </div>
+      <p class="font-bold text-white opacity-50 text-lg select-none">Desenvolvido por: fabricio</p>
+    </div>
+
+    <!-- Área de texto -->
+    <textarea id="texto" class="w-full resize-none border-0 outline-none h-[400px] p-2" placeholder="Cole a lista de compras aqui..."></textarea>
+
+    <!-- Footer -->
+    <div class="bg-orange-400 p-6 rounded-b-lg shadow flex justify-center items-center gap-4">
+      <button id="imprimir" class="bg-white px-6 py-2 rounded-lg font-bold text-orange-400 flex gap-2">
+        IMPRIMIR
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Zm-3 0h.008v.008H15V10.5Z" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Contador e checkbox -->
+    <div class="font-bold text-white opacity-50 text-lg mt-2 flex justify-between items-center">
+      <p id="historicoBtn" class="cursor-pointer"> Folhas impressas: <span id="contadorFolhas">0</span> </p>
+      <label class="flex items-center gap-2 text-white font-bold cursor-pointer select-none">
+        <input type="checkbox" id="detectarTexto" class="w-5 h-5 cursor-pointer border border-white checked:bg-white checked:border-white" checked>
+        Detecção de texto
+      </label>
+    </div>
+  </div>
+
+  <!-- POP-UP HISTÓRICO -->
+  <div id="popupHistorico" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center hidden z-50">
+    <div class="bg-white w-[70%] max-h-[80%] overflow-y-auto p-6 rounded-xl shadow-2xl relative scrollbar-thin scrollbar-thumb-gray-400">
+      <h2 class="text-xl font-bold mb-4">Histórico de Impressões</h2>
+      <div id="cardsHistorico" class="flex flex-col gap-3"></div>
+      <button id="fecharHistorico" class="absolute top-4 right-4 text-red-500 font-bold text-xl">✖</button>
+    </div>
+  </div>
+
+  <script>
+    // ===================== CONSTANTES =====================
+    const REGEX = /\[\s*\d{1,2}:\d{2}(?:\s*(?:AM|PM))?\s*,\s*\d{1,2}\/\d{1,2}\/\d{2,4}\s*\]\s*[^:\n]*:\s*/gi;
+    const WORDS = [
+      "dinheiro","maquininha","maquina","máquina","convenio","convênio","convenío","convênío",
+      "cartão","cartao","débito","debito","credito","crédito","pix", "crediario", "crediário"
+    ];
+
+    // ===================== ELEMENTOS =====================
+    const ta = document.getElementById('texto');
+    const btnLimpar = document.getElementById('limpar');
+    const btnCopiar = document.getElementById('copiar');
+    const btnImprimir = document.getElementById('imprimir');
+    const contadorFolhas = document.getElementById('contadorFolhas');
+    const historicoBtn = document.getElementById('historicoBtn');
+
+    const popupHistorico = document.getElementById('popupHistorico');
+    const cardsHistorico = document.getElementById('cardsHistorico');
+    const fecharHistorico = document.getElementById('fecharHistorico');
+
+    let folhasImpressas = 0;
+    let historicoImpressao = [];
+
+    // ===================== FUNÇÕES =====================
+    function limparPrefixos(texto) {
+      if (!texto) return texto;
+      return texto.replace(/\r/g, '').replace(REGEX, '');
+    }
+
+    function destacarPalavras(texto) {
+  // Palavras-chave já existentes
+  const regexPalavras = new RegExp(`\\b(${WORDS.join('|')})\\b`, 'gi');
+  texto = texto.replace(regexPalavras, (_, match) => `<span class="blockName">${match.toUpperCase()}</span>`);
+
+  // Números com 5 ou mais dígitos
+  const regexNumeros = /\b\d{5,}\b/g;
+  texto = texto.replace(regexNumeros, match => `<b>${match}</b>`);
+
+  return texto;
+}
+
+
+    function gerarHTMLParaImpressao(texto) {
+  const linhas = texto.split('\n');
+  return linhas.map(l => {
+    if (l.trim() === '') return '<div class="line">&nbsp;</div>'; // apenas espaço visual
+    return `<div class="line">${l}</div>`;
+  }).join('');
+}
+
+
+    function abrirHistorico() {
+      cardsHistorico.innerHTML = '';
+      if (historicoImpressao.length === 0) {
+        cardsHistorico.innerHTML = '<p class="text-gray-500">Nenhuma impressão ainda.</p>';
+      } else {
+        historicoImpressao.forEach((item, index) => {
+          const card = document.createElement('div');
+          card.className = 'border p-3 rounded shadow hover:bg-orange-100 cursor-pointer';
+          card.innerHTML = `
+  <div class="flex justify-between">
+    <p class="text-sm text-gray-600">${item.data}</p>
+    <p class="text-sm font-bold text-orange-600">📄 Folha ${item.folha}</p>
+  </div>
+  <p class="text-gray-800">${item.texto.substring(0, 100)}${item.texto.length > 100 ? '...' : ''}</p>
+`;
+
+          card.addEventListener('click', () => {
+            if (confirm("Deseja editar este item?")) {
+              ta.value = item.textoOriginal;
+              popupHistorico.classList.add('hidden');
+              ta.focus();
+            }
+          });
+          cardsHistorico.appendChild(card);
+        });
+      }
+      popupHistorico.classList.remove('hidden');
+    }
+
+    // ===================== EVENTOS =====================
+    btnLimpar.addEventListener('click', () => {
+      ta.value = '';
+      ta.focus();
+    });
+
+    btnCopiar.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(ta.value);
+        btnCopiar.innerText = "COPIADO!";
+        setTimeout(() => btnCopiar.innerText = "COPIAR", 1500);
+      } catch {
+        alert('Erro ao copiar!');
+      }
+    });
+
+    ta.addEventListener('paste', (event) => {
+      event.preventDefault();
+      const pasted = (event.clipboardData || window.clipboardData).getData('text') || '';
+      const cleaned = limparPrefixos(pasted);
+      const start = ta.selectionStart || 0;
+      const end = ta.selectionEnd || 0;
+      ta.value = ta.value.slice(0, start) + cleaned + ta.value.slice(end);
+      const pos = start + cleaned.length;
+      ta.setSelectionRange(pos, pos);
+    });
+
+    ta.addEventListener('input', () => {
+      const selStart = ta.selectionStart;
+      const selEnd = ta.selectionEnd;
+      const original = ta.value;
+      const cleaned = limparPrefixos(original);
+      if (original !== cleaned) {
+        ta.value = cleaned;
+        ta.setSelectionRange(selStart, selEnd);
+      }
+    });
+
+    btnImprimir.addEventListener('click', () => {
+  const textoOriginal = ta.value.trim();
+  if (!textoOriginal) return;
+
+  // 1. Pré-processamento do texto
+  let textoProcessado = textoOriginal;
+  if (document.getElementById('detectarTexto').checked) {
+    textoProcessado = destacarPalavras(textoProcessado);
+  }
+
+  // 2. Gerar HTML de impressão
+  const htmlConteudo = gerarHTMLParaImpressao(textoProcessado);
+
+  // 3. Montar título com data/hora e número da folha
+  const date = new Date();
+  const dataFormatada = 
+    ("0" + date.getHours()).slice(-2) + ":" + ("0" + date.getMinutes()).slice(-2) +
+    " [" + 
+    ("0" + (date.getMonth() + 1)).slice(-2) + "/" + 
+    ("0" + date.getDate()).slice(-2) + "/" + 
+    date.getFullYear().toString().slice(-2) + 
+    "]";
+
+  const titulo = `
+    <div style="display:flex; justify-content:space-between; font-weight:bold;">
+      <span>🛒 Lista de compras — 🕐 ${dataFormatada}</span>
+      <span>📄 Folha: ${folhasImpressas + 1}</span>
+    </div>
+    <br>
+  `;
+
+  // 4. Abrir janela de impressão
+  const janelaImpressao = window.open('', '_blank');
+  janelaImpressao.document.write(`
+    <html>
+    <head>
+      <title>Impressão</title>
+      <style type="text/css">
+        @media print {
+          body { margin: 0; font-family: sans-serif; }
+          @page { size: auto; margin: 30px; }
+          .line { margin: 5px 0; }
+          .blockName { color: black; font-weight: bold; font-family: arial; }
+          .quebraPagina { page-break-after: always; }
+        }
+      </style>
+    </head>
+    <body>
+      ${titulo}${htmlConteudo}
+    </body>
+    </html>
+  `);
+  janelaImpressao.document.close();
+  janelaImpressao.print();
+  janelaImpressao.close();
+
+  // 5. Atualizar contador e histórico
+  folhasImpressas++;
+  contadorFolhas.textContent = folhasImpressas;
+  historicoImpressao.unshift({ 
+    data: dataFormatada,
+    folha: folhasImpressas,
+    texto: textoOriginal, 
+    textoOriginal: textoOriginal 
+  });
+
+  // 6. Limpar área de texto
+  ta.value = "";
+  ta.focus();
+});
+
+
+    historicoBtn.addEventListener('click', abrirHistorico);
+    fecharHistorico.addEventListener('click', () => popupHistorico.classList.add('hidden'));
+
+  </script>
+</body>
+</html>
